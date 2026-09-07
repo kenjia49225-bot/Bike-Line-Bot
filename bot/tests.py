@@ -5,7 +5,8 @@ from django.test import TestCase
 
 from conversations.models import Conversation
 
-from .services import generate_reply, handle_text_message, save_message
+from .ai import HANDOFF_MESSAGE, build_context, generate_reply
+from .services import handle_text_message, save_message
 
 
 class BotServiceTests(TestCase):
@@ -17,11 +18,8 @@ class BotServiceTests(TestCase):
         self.assertEqual(conv.role, Conversation.Role.USER)
         self.assertEqual(conv.content, 'こんにちは')
 
-    def test_generate_reply_contains_message(self):
-        reply = generate_reply('営業時間は?')
-        self.assertIn('営業時間は?', reply)
-
-    def test_handle_text_message_saves_both_roles(self):
+    @mock.patch('bot.ai.generate_ai_reply', return_value='営業時間は 10:00〜19:00 です。')
+    def test_handle_text_message_saves_both_roles(self, mock_ai):
         reply = handle_text_message('user-2', '定休日はいつですか?')
         self.assertEqual(Conversation.objects.count(), 2)
         self.assertTrue(
@@ -30,7 +28,24 @@ class BotServiceTests(TestCase):
         self.assertTrue(
             Conversation.objects.filter(user_id='user-2', role=Conversation.Role.BOT).exists()
         )
-        self.assertEqual(reply, generate_reply('定休日はいつですか?'))
+        self.assertEqual(reply, '営業時間は 10:00〜19:00 です。')
+
+
+class AIReplyTests(TestCase):
+    @mock.patch('bot.ai.generate_ai_reply', return_value='回答です。')
+    def test_generate_reply_uses_ai_answer(self, mock_ai):
+        self.assertEqual(generate_reply('質問'), '回答です。')
+
+    @mock.patch('bot.ai.generate_ai_reply', return_value=None)
+    def test_generate_reply_handoff_when_no_answer(self, mock_ai):
+        self.assertEqual(generate_reply('質問'), HANDOFF_MESSAGE)
+
+    @mock.patch('bot.ai.generate_ai_reply', side_effect=Exception('boom'))
+    def test_generate_reply_handoff_on_error(self, mock_ai):
+        self.assertEqual(generate_reply('質問'), HANDOFF_MESSAGE)
+
+    def test_build_context_returns_string(self):
+        self.assertIsInstance(build_context(), str)
 
 
 class WebhookViewTests(TestCase):
@@ -53,7 +68,8 @@ class WebhookViewTests(TestCase):
 
     @mock.patch('bot.views.WebhookParser')
     @mock.patch('bot.views._reply')
-    def test_webhook_saves_conversation_and_replies(self, mock_reply, mock_parser):
+    @mock.patch('bot.ai.generate_ai_reply', return_value='回答です。')
+    def test_webhook_saves_conversation_and_replies(self, mock_ai, mock_reply, mock_parser):
         body = self._make_text_event_body(text='営業時間を教えて')
         from linebot.v3.webhooks import MessageEvent, TextMessageContent, UserSource
 
@@ -78,4 +94,4 @@ class WebhookViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Conversation.objects.count(), 2)
-        mock_reply.assert_called_once_with('token', 'reply-1', mock.ANY)
+        mock_reply.assert_called_once_with('token', 'reply-1', '回答です。')

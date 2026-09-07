@@ -1,5 +1,7 @@
 from conversations.models import Conversation
 
+from .ai import generate_reply
+
 
 def save_message(user_id, role, content):
     return Conversation.objects.create(
@@ -7,10 +9,6 @@ def save_message(user_id, role, content):
         role=role,
         content=content,
     )
-
-
-def generate_reply(text):
-    return f'ご質問ありがとうございます。ただいま準備中のため、担当者への引き継ぎを行います。\n（受信メッセージ: {text}）'
 
 
 def handle_text_message(user_id, text):
