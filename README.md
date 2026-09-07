@@ -12,16 +12,28 @@
   - `Store` モデル（店舗名・営業時間・定休日・アクセス・支払い方法・電話番号・住所）
   - Django Admin への登録（一覧表示・検索）
   - `Store` モデルのテスト
-
-LINE Messaging API・AI API 連携、FAQ・会話履歴などは**まだ実装されていません**。
+- `faqs` アプリ（FAQ 管理）
+  - `FAQ` モデル（質問文・回答文・公開状態・作成/更新日時）
+  - Django Admin への登録（検索・公開状態の一覧切替）
+  - `FAQ` モデルのテスト
+- `conversations` アプリ（会話履歴）
+  - `Conversation` モデル（ユーザー識別子・発言者・内容・作成日時）
+  - Django Admin への登録
+  - `Conversation` モデルのテスト
+- `bot` アプリ（LINE 連携・AI 回答）
+  - LINE Messaging API の Webhook 受信（`/bot/webhook/`）
+  - 受信メッセージの会話履歴への保存
+  - AI（OpenAI）による自動回答（FAQ・店舗情報を参照）
+  - AI で回答できない場合は人間（店舗スタッフ）への引き継ぎメッセージを返す
+  - Webhook・AI・引き継ぎのテスト
 
 ## 技術スタック
 
 - Python 3.12
 - Django 5.2.17
 - MySQL（本番想定）
-- LINE Messaging API（未実装）
-- AI API（未実装）
+- LINE Messaging API（`line-bot-sdk`）
+- AI API（OpenAI）
 
 ## ディレクトリ構成
 
@@ -33,15 +45,27 @@ Bike-Line-Bot/
 │   ├── urls.py                # URL ルーティング
 │   ├── wsgi.py
 │   └── asgi.py
-├── stores/                    # 店舗情報アプリ（実装済み）
-│   ├── __init__.py
-│   ├── apps.py                # アプリ設定
+├── stores/                    # 店舗情報アプリ
 │   ├── models.py              # Store モデル
 │   ├── admin.py               # Django Admin 登録
-│   ├── tests.py               # Store モデルのテスト
-│   └── migrations/            # マイグレーション
-│       ├── __init__.py
-│       └── 0001_initial.py
+│   ├── tests.py
+│   └── migrations/
+├── faqs/                      # FAQ 管理アプリ
+│   ├── models.py              # FAQ モデル
+│   ├── admin.py               # Django Admin 登録
+│   ├── tests.py
+│   └── migrations/
+├── conversations/             # 会話履歴アプリ
+│   ├── models.py              # Conversation モデル
+│   ├── admin.py               # Django Admin 登録
+│   ├── tests.py
+│   └── migrations/
+├── bot/                       # LINE 連携・AI 回答アプリ
+│   ├── views.py               # Webhook 受信
+│   ├── urls.py                # Webhook URL ルーティング
+│   ├── services.py            # メッセージ保存・応答の振り分け
+│   ├── ai.py                  # AI 回答生成・人間への引き継ぎ判定
+│   └── tests.py               # Webhook・AI・引き継ぎのテスト
 ├── manage.py
 ├── requirements.txt
 ├── .env.example               # 環境変数の雛形
@@ -52,14 +76,6 @@ Bike-Line-Bot/
 
 - `.env`（実際の環境変数。秘密情報を含むためコミットしない）
 - `.venv/`（Python 仮想環境）
-
-### 今後のアプリ分割方針（予定）
-
-以下のアプリは**今後追加予定**です（現時点では存在しません）。
-
-- `faqs` … FAQ 管理
-- `bot` … LINE 連携・Webhook
-- `conversations` … 会話履歴
 
 ## セットアップ手順
 
@@ -108,6 +124,10 @@ Django Admin は `http://127.0.0.1:8000/admin/` から利用できます。
 | `MYSQL_PASSWORD` | MySQL のパスワード |
 | `MYSQL_HOST` | MySQL のホスト |
 | `MYSQL_PORT` | MySQL のポート |
+| `LINE_CHANNEL_SECRET` | LINE チャネルシークレット |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE チャネルアクセストークン |
+| `OPENAI_API_KEY` | OpenAI API キー |
+| `OPENAI_MODEL` | 使用する OpenAI モデル（デフォルト: `gpt-4o-mini`） |
 
 ## 開発コマンド
 
@@ -132,9 +152,7 @@ python manage.py runserver
 
 優先順位の高い順に記載しています（内容は今後変更される可能性があります）。
 
-1. **FAQ 管理** … 店舗に寄せられるよくある質問と回答の管理（`faqs` アプリ）
-2. **会話履歴** … ユーザーとの会話ログの保存（`conversations` アプリ）
-3. **LINE Webhook** … LINE Messaging API との連携（`bot` アプリ）
-4. **AI 自動回答** … FAQ・店舗情報を参照した AI による自動応答
-5. **人間への引き継ぎ** … AI で回答できない問い合わせを店舗スタッフへ引き継ぐ仕組み
-6. **テスト・エラー処理** … テストの充実とエラーハンドリングの整備
+1. **人間への引き継ぎの実運用** … 引き継ぎ先スタッフへの通知・チャット連携の具体化
+2. **FAQ の充実** … 実際の店舗に合わせた FAQ 整備と管理画面の改善
+3. **エラー処理の強化** … リトライ・ログ・監視の整備
+4. **会話履歴の活用** … 前後の文脈を踏まえた応答（マルチターン対応）
