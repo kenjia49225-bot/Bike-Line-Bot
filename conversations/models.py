@@ -6,9 +6,16 @@ class Conversation(models.Model):
         USER = 'user', 'ユーザー'
         BOT = 'bot', 'ボット'
 
+    class Status(models.TextChoices):
+        OPEN = 'open', '未対応'
+        HANDOFF = 'handoff', '要引き継ぎ'
+        RESOLVED = 'resolved', '解決済み'
+
     user_id = models.CharField('ユーザー識別子', max_length=255)
     role = models.CharField('発言者', max_length=10, choices=Role.choices)
     content = models.TextField('メッセージ内容')
+    needs_human = models.BooleanField('要引き継ぎ', default=False)
+    status = models.CharField('対応状況', max_length=10, choices=Status.choices, default=Status.OPEN)
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
 
     class Meta:

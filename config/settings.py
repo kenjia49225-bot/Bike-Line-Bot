@@ -143,3 +143,13 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', '')
 # AI (OpenAI)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+
+# レート制限（スパム対策）
+RATE_LIMIT_MAX = int(os.getenv('RATE_LIMIT_MAX', '10'))       # 1ユーザーあたりの最大メッセージ数
+RATE_LIMIT_WINDOW = int(os.getenv('RATE_LIMIT_WINDOW', '60'))  # 制限ウィンドウ（秒）
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    }
+}
