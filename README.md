@@ -1,28 +1,83 @@
 # Bike-Line-Bot
 
-自転車販売・修理店向けの LINE 問い合わせ Bot です。店舗に届く問い合わせの一部を AI で自動回答し、回答できない問い合わせは店舗スタッフへ引き継ぎます。
+自転車販売・修理店向けの LINE 問い合わせ Bot です。店舗に届く問い合わせの一部を AI で自動回答し、AI で回答できない問い合わせは人間（店舗スタッフ）へ引き継ぐことを想定しています。
+
+## 現在の実装状況
+
+現時点で実装済みの内容は以下のとおりです。
+
+- Django プロジェクト初期構築（`config`）
+- MySQL 接続（環境変数による接続設定）
+- `stores` アプリ（店舗情報）
+  - `Store` モデル（店舗名・営業時間・定休日・アクセス・支払い方法・電話番号・住所）
+  - Django Admin への登録（一覧表示・検索）
+  - `Store` モデルのテスト
+- `faqs` アプリ（FAQ 管理）
+  - `FAQ` モデル（質問文・回答文・公開状態・作成/更新日時）
+  - Django Admin への登録（検索・公開状態の一覧切替）
+  - `FAQ` モデルのテスト
+- `conversations` アプリ（会話履歴）
+  - `Conversation` モデル（ユーザー識別子・発言者・内容・作成日時）
+  - Django Admin への登録
+  - `Conversation` モデルのテスト
+- `bot` アプリ（LINE 連携・AI 回答）
+  - LINE Messaging API の Webhook 受信（`/bot/webhook/`）
+  - 受信メッセージの会話履歴への保存
+  - AI（OpenAI）による自動回答（FAQ・店舗情報を参照）
+  - AI で回答できない場合は人間（店舗スタッフ）への引き継ぎメッセージを返す
+  - Webhook・AI・引き継ぎのテスト
 
 ## 技術スタック
 
-- Python 3.12 / Django 5.2
+- Python 3.12
+- Django 5.2.17
 - MySQL（本番想定）
-- LINE Messaging API（未実装）
-- AI API（未実装）
+- LINE Messaging API（`line-bot-sdk`）
+- AI API（OpenAI）
 
 ## ディレクトリ構成
 
 ```
-config/   # Django プロジェクト本体（settings, urls, wsgi, asgi）
+Bike-Line-Bot/
+├── config/                    # Django プロジェクト本体
+│   ├── __init__.py
+│   ├── settings.py            # プロジェクト設定
+│   ├── urls.py                # URL ルーティング
+│   ├── wsgi.py
+│   └── asgi.py
+├── stores/                    # 店舗情報アプリ
+│   ├── models.py              # Store モデル
+│   ├── admin.py               # Django Admin 登録
+│   ├── tests.py
+│   └── migrations/
+├── faqs/                      # FAQ 管理アプリ
+│   ├── models.py              # FAQ モデル
+│   ├── admin.py               # Django Admin 登録
+│   ├── tests.py
+│   └── migrations/
+├── conversations/             # 会話履歴アプリ
+│   ├── models.py              # Conversation モデル
+│   ├── admin.py               # Django Admin 登録
+│   ├── tests.py
+│   └── migrations/
+├── bot/                       # LINE 連携・AI 回答アプリ
+│   ├── views.py               # Webhook 受信
+│   ├── urls.py                # Webhook URL ルーティング
+│   ├── services.py            # メッセージ保存・応答の振り分け
+│   ├── ai.py                  # AI 回答生成・人間への引き継ぎ判定
+│   └── tests.py               # Webhook・AI・引き継ぎのテスト
+├── manage.py
+├── requirements.txt
+├── .env.example               # 環境変数の雛形
+└── .gitignore
 ```
 
-### 今後のアプリ分割方針
+以下のファイルはローカル環境のみに存在し、Git では管理していません。
 
-- `stores` … 店舗情報（営業時間・定休日・アクセス等）
-- `faqs` … FAQ
-- `bot` … LINE 連携・Webhook
-- `conversations` … 会話履歴
+- `.env`（実際の環境変数。秘密情報を含むためコミットしない）
+- `.venv/`（Python 仮想環境）
 
-## ローカル開発環境の起動方法
+## セットアップ手順
 
 ```bash
 # 1. リポジトリをクローン
@@ -43,10 +98,61 @@ cp .env.example .env
 # 5. マイグレーション
 python manage.py migrate
 
-# 6. 開発サーバー起動
+# 6. 管理ユーザーを作成（Django Admin ログイン用）
+python manage.py createsuperuser
+
+# 7. 開発サーバー起動
 python manage.py runserver
 ```
 
 `http://127.0.0.1:8000/` にアクセスすると起動確認できます。
+Django Admin は `http://127.0.0.1:8000/admin/` から利用できます。
 
 > 秘密情報（`.env`）は Git にコミットしないでください。実値は共有せず、`.env.example` を雛形として使用します。
+
+## 環境変数
+
+`.env` に設定する環境変数です（雛形は `.env.example`）。実際の値は README に記載しません。
+
+| 変数名 | 説明 |
+| --- | --- |
+| `DJANGO_SECRET_KEY` | Django のシークレットキー |
+| `DEBUG` | デバッグモードの有効化（`True` / `False`） |
+| `ALLOWED_HOSTS` | 許可するホスト（カンマ区切り） |
+| `MYSQL_DATABASE` | MySQL のデータベース名 |
+| `MYSQL_USER` | MySQL のユーザー名 |
+| `MYSQL_PASSWORD` | MySQL のパスワード |
+| `MYSQL_HOST` | MySQL のホスト |
+| `MYSQL_PORT` | MySQL のポート |
+| `LINE_CHANNEL_SECRET` | LINE チャネルシークレット |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE チャネルアクセストークン |
+| `OPENAI_API_KEY` | OpenAI API キー |
+| `OPENAI_MODEL` | 使用する OpenAI モデル（デフォルト: `gpt-4o-mini`） |
+
+## 開発コマンド
+
+```bash
+# マイグレーションファイルの作成
+python manage.py makemigrations
+
+# マイグレーションの適用
+python manage.py migrate
+
+# プロジェクト設定のチェック
+python manage.py check
+
+# テストの実行
+python manage.py test
+
+# 開発サーバーの起動
+python manage.py runserver
+```
+
+## 今後の開発予定
+
+優先順位の高い順に記載しています（内容は今後変更される可能性があります）。
+
+1. **人間への引き継ぎの実運用** … 引き継ぎ先スタッフへの通知・チャット連携の具体化
+2. **FAQ の充実** … 実際の店舗に合わせた FAQ 整備と管理画面の改善
+3. **エラー処理の強化** … リトライ・ログ・監視の整備
+4. **会話履歴の活用** … 前後の文脈を踏まえた応答（マルチターン対応）
