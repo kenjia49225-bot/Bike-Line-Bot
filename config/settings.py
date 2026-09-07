@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'stores',
     'faqs',
     'conversations',
+    'bot',
 ]
 
 MIDDLEWARE = [
@@ -133,3 +134,8 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# LINE Messaging API
+LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', '')
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', '')
