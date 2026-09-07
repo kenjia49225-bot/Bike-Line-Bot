@@ -17,6 +17,14 @@ class BotServiceTests(TestCase):
         self.assertEqual(conv.user_id, 'user-1')
         self.assertEqual(conv.role, Conversation.Role.USER)
         self.assertEqual(conv.content, 'こんにちは')
+        self.assertFalse(conv.needs_human)
+        self.assertEqual(conv.status, Conversation.Status.OPEN)
+
+    def test_save_message_marks_handoff(self):
+        save_message('user-1', Conversation.Role.BOT, '引き継ぎます', needs_human=True)
+        conv = Conversation.objects.get()
+        self.assertTrue(conv.needs_human)
+        self.assertEqual(conv.status, Conversation.Status.HANDOFF)
 
     @mock.patch('bot.ai.generate_ai_reply', return_value='営業時間は 10:00〜19:00 です。')
     def test_handle_text_message_saves_both_roles(self, mock_ai):
@@ -25,10 +33,17 @@ class BotServiceTests(TestCase):
         self.assertTrue(
             Conversation.objects.filter(user_id='user-2', role=Conversation.Role.USER).exists()
         )
-        self.assertTrue(
-            Conversation.objects.filter(user_id='user-2', role=Conversation.Role.BOT).exists()
-        )
+        bot_conv = Conversation.objects.filter(user_id='user-2', role=Conversation.Role.BOT).get()
+        self.assertFalse(bot_conv.needs_human)
         self.assertEqual(reply, '営業時間は 10:00〜19:00 です。')
+
+    @mock.patch('bot.ai.generate_ai_reply', return_value=None)
+    def test_handle_text_message_marks_handoff_on_no_answer(self, mock_ai):
+        reply = handle_text_message('user-3', '分からない質問')
+        self.assertEqual(reply, HANDOFF_MESSAGE)
+        bot_conv = Conversation.objects.filter(user_id='user-3', role=Conversation.Role.BOT).get()
+        self.assertTrue(bot_conv.needs_human)
+        self.assertEqual(bot_conv.status, Conversation.Status.HANDOFF)
 
 
 class AIReplyTests(TestCase):
@@ -46,6 +61,14 @@ class AIReplyTests(TestCase):
 
     def test_build_context_returns_string(self):
         self.assertIsInstance(build_context(), str)
+
+    def test_build_context_filters_faqs_by_message(self):
+        from faqs.models import FAQ
+
+        FAQ.objects.create(question='営業時間は？', answer='10時から19時です。', is_active=True)
+        FAQ.objects.create(question='支払い方法は？', answer='現金とカードです。', is_active=True)
+        context = build_context('営業時間を教えてください')
+        self.assertIn('営業時間は？', context)
 
 
 class WebhookViewTests(TestCase):

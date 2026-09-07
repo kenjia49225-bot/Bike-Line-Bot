@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from django.test import TestCase
+from django.utils import timezone
 
 from .models import Store
 
@@ -26,3 +29,24 @@ class StoreModelTests(TestCase):
         self.assertEqual(store.payment_methods, '')
         self.assertEqual(store.phone, '')
         self.assertEqual(store.address, '')
+
+
+class StoreOpenNowTests(TestCase):
+    def setUp(self):
+        self.store = Store.objects.create(
+            name='営業判定テスト店舗',
+            business_hours='10:00-19:00',
+            closed_days='水曜日',
+        )
+
+    def test_open_within_hours_on_weekday(self):
+        now = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.get_current_timezone())  # 火曜 12:00
+        self.assertTrue(self.store.is_open_now(now))
+
+    def test_closed_outside_hours(self):
+        now = datetime(2026, 9, 8, 20, 0, tzinfo=timezone.get_current_timezone())  # 火曜 20:00
+        self.assertFalse(self.store.is_open_now(now))
+
+    def test_closed_on_closed_day(self):
+        now = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.get_current_timezone())  # 水曜 12:00
+        self.assertFalse(self.store.is_open_now(now))
