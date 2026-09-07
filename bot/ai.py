@@ -1,7 +1,11 @@
+import logging
+
 from django.conf import settings
 
 from faqs.models import FAQ
 from stores.models import Store
+
+logger = logging.getLogger(__name__)
 
 
 def build_context():
@@ -53,7 +57,7 @@ def generate_ai_reply(user_message):
         f'{context}'
     )
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, timeout=30.0)
     response = client.chat.completions.create(
         model=settings.OPENAI_MODEL,
         messages=[
@@ -61,7 +65,10 @@ def generate_ai_reply(user_message):
             {'role': 'user', 'content': user_message},
         ],
     )
-    answer = response.choices[0].message.content.strip()
+    answer = response.choices[0].message.content
+    if answer is None:
+        return None
+    answer = answer.strip()
     if answer == 'HANDOFF':
         return None
     return answer
@@ -74,7 +81,8 @@ def generate_reply(user_message):
     """AI で回答を試み、できない場合は人間への引き継ぎメッセージを返す。"""
     try:
         answer = generate_ai_reply(user_message)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('AI reply generation failed: %s', exc)
         answer = None
 
     if answer:
