@@ -30,3 +30,23 @@ class ConversationModelTests(TestCase):
             content='こんにちは',
         )
         self.assertEqual(str(conv), 'line-user-123 (user): こんにちは')
+
+    def test_default_status_open(self):
+        conv = Conversation.objects.create(
+            user_id='line-user-123',
+            role=Conversation.Role.USER,
+            content='こんにちは',
+        )
+        self.assertEqual(conv.status, Conversation.Status.OPEN)
+        self.assertFalse(conv.needs_human)
+
+    def test_status_handoff(self):
+        conv = Conversation.objects.create(
+            user_id='line-user-123',
+            role=Conversation.Role.BOT,
+            content='引き継ぎます',
+            needs_human=True,
+            status=Conversation.Status.HANDOFF,
+        )
+        self.assertEqual(conv.status, Conversation.Status.HANDOFF)
+        self.assertTrue(conv.needs_human)
