@@ -177,6 +177,12 @@ python manage.py send_line_message <LINEユーザーID> <本文>
 
 ## 本番デプロイ
 
+### 構成
+
+- Web: gunicorn（`gunicorn.conf.py`）＋ Whitenoise（静的ファイル配信）
+- DB: MySQL 8.0
+- コンテナ起動時に `entrypoint.sh` が `migrate` と `collectstatic` を自動実行します
+
 ### 環境変数
 
 `.env.example` を `.env` にコピーし、実値を設定してください（`.env` は Git 管理外）。
@@ -184,35 +190,79 @@ python manage.py send_line_message <LINEユーザーID> <本文>
 本番では最低限以下を設定します：
 
 - `DEBUG=False`
-- `DJANGO_SECRET_KEY` を安全なランダム値に
+- `DJANGO_SECRET_KEY` を安全なランダム値に（`$` を含む値は docker compose で展開されることがあるため注意）
 - `ALLOWED_HOSTS` に公開ドメインを指定
 - `CSRF_TRUSTED_ORIGINS` に `https://<ドメイン>` を指定
-- `SECURE_SSL_REDIRECT=True`、`SESSION_COOKIE_SECURE=True`、`CSRF_COOKIE_SECURE=True`
-- `MYSQL_*` を本番 DB に
+- `SECURE_SSL_REDIRECT=True`、`SESSION_COOKIE_SECURE=True`、`CSRF_COOKIE_SECURE=True`、`SECURE_HSTS_SECONDS=31536000`
+- `MYSQL_*` を本番 DB に（Docker 利用時は `MYSQL_HOST=db`）
 - `STAFF_LINE_USER_IDS` に引き継ぎ通知先スタッフの LINE ユーザーID
 
-### WSGI サーバーでの起動（gunicorn）
+### Docker での起動（推奨）
+
+```bash
+# .env を用意してから
+docker compose up -d --build
+```
+
+- `migrate` と `collectstatic` は起動時（`entrypoint.sh`）に自動実行されます
+- `migrate` 失敗時はコンテナが起動しません（`set -e`）
+
+### WSGI サーバー単体での起動（gunicorn・Docker を使わない場合）
 
 ```bash
 pip install -r requirements.txt
 python manage.py collectstatic --noinput
 python manage.py migrate
-gunicorn config.wsgi:application --bind 0.0.0.0:8000
+gunicorn config.wsgi:application --config gunicorn.conf.py
 ```
 
-### Docker での起動
+### Admin（管理画面）の作成
 
 ```bash
-docker compose up -d --build
+# Docker の場合
+docker compose exec web python manage.py createsuperuser
+
+# ローカル / gunicorn 単体の場合
+python manage.py createsuperuser
 ```
 
-LINE Webhook URL には `https://<ドメイン>/bot/webhook/` を設定します（HTTPS 必須）。
+管理画面は `https://<ドメイン>/admin/` からアクセスできます。
+
+### HTTPS / リバースプロキシ
+
+HTTPS（TLS）終端は nginx やホスティングサービスのロードバランサ側で行います。リクエストを gunicorn（`0.0.0.0:8000`）へ転送し、`X-Forwarded-Proto` ヘッダを付与してください。
+
+nginx 設定例：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+`SECURE_SSL_REDIRECT=True` の場合、Django は `X-Forwarded-Proto` を参照して HTTPS 判定します。
+
+### LINE Webhook の本番設定
+
+1. LINE Developers コンソールで対象チャネルの Messaging API 設定を開く
+2. Webhook URL に `https://<ドメイン>/bot/webhook/` を設定
+3. 「Webhookの利用」を ON にし、「検証」で接続確認（200 が返れば成功）
+
+### ヘルスチェック
+
+`/bot/health/` が DB 接続を含むヘルスチェックを返します（正常時 HTTP 200）。監視サービスから利用できます。
 
 ### 本番設定チェック
 
 ```bash
 python manage.py check --deploy
 ```
+
+`DEBUG=False` 等の本番設定を行った状態で実行すると警告が解消されます。
+
 
 ## 今後の開発予定
 

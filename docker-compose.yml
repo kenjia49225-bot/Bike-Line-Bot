@@ -1,27 +1,42 @@
 services:
   web:
     build: .
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    entrypoint: ["/app/entrypoint.sh"]
+    command: gunicorn config.wsgi:application --config gunicorn.conf.py
     env_file:
       - .env
+    environment:
+      MYSQL_HOST: db
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/bot/health/', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   db:
     image: mysql:8.0
-    env:
+    environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-bike_line_bot}
       MYSQL_USER: ${MYSQL_USER:-bike_line_bot}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
-    ports:
-      - "3306:3306"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
   mysql_data:
