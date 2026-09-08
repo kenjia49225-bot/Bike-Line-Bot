@@ -36,10 +36,14 @@ def _is_rate_limited(user_id):
     window = timedelta(seconds=settings.RATE_LIMIT_WINDOW)
 
     with transaction.atomic():
-        record, created = RateLimit.objects.select_for_update().get_or_create(
-            user_id=user_id,
-            defaults={'count': 0, 'window_start': now},
-        )
+        # 既存行はロックして原子的に更新、無ければ作成（初回は get_or_create で安全に処理）
+        try:
+            record = RateLimit.objects.select_for_update().get(user_id=user_id)
+            created = False
+        except RateLimit.DoesNotExist:
+            record = RateLimit(user_id=user_id, count=0, window_start=now)
+            created = True
+
         # ウィンドウが過ぎていたらリセット
         if not created and record.window_start < (now - window):
             record.count = 0
@@ -49,7 +53,7 @@ def _is_rate_limited(user_id):
             return True
 
         record.count += 1
-        record.save(update_fields=['count', 'window_start', 'updated_at'])
+        record.save()
 
     return False
 
