@@ -1,8 +1,7 @@
-from django.core.cache import cache
-
 from django.conf import settings
 
 from conversations.models import Conversation
+from reservations.models import Reservation
 
 from .ai import HANDOFF_MESSAGE, generate_reply
 
@@ -29,8 +28,9 @@ def handle_text_message(user_id, text):
 
     reply_text = generate_reply(text, user_id=user_id)
     is_handoff = reply_text == HANDOFF_MESSAGE
+    already_handoff = _has_pending_handoff(user_id)
     save_message(user_id, Conversation.Role.BOT, reply_text, needs_human=is_handoff)
-    if is_handoff and not _has_pending_handoff(user_id):
+    if is_handoff and not already_handoff:
         from .notifications import notify_staff_handoff
 
         notify_staff_handoff(user_id, text)
@@ -42,7 +42,10 @@ def _handle_intake(user_id, text):
     from .intake import IntakeFlow
 
     flow = IntakeFlow(user_id)
-    in_progress = cache.get(f'intake:{user_id}') is not None
+    in_progress = Reservation.objects.filter(
+        user_id=user_id,
+        status=Reservation.Status.PENDING,
+    ).exists()
 
     stripped = (text or '').strip()
     if in_progress:
@@ -60,7 +63,7 @@ def _has_pending_handoff(user_id):
         user_id=user_id,
         needs_human=True,
         status=Conversation.Status.HANDOFF,
-    ).exclude(content=HANDOFF_MESSAGE).exists()
+    ).exists()
 
 
 def push_message(user_id, text):

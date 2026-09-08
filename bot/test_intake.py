@@ -8,10 +8,9 @@ from .intake import IntakeFlow
 class IntakeFlowTests(TestCase):
     def setUp(self):
         self.flow = IntakeFlow('user-1')
-        self.flow.clear()
 
     def tearDown(self):
-        self.flow.clear()
+        Reservation.objects.filter(user_id='user-1', status=Reservation.Status.PENDING).delete()
 
     def test_start_asks_name(self):
         reply = self.flow.start('修理の依頼をしたい')
@@ -30,8 +29,24 @@ class IntakeFlowTests(TestCase):
         self.assertEqual(r.name, '田中')
         self.assertEqual(r.status, Reservation.Status.CONFIRMED)
 
-    def test_cancel_clears_flow(self):
+    def test_cancel_cancels_reservation(self):
         self.flow.start('予約したい')
         reply = self.flow.handle('キャンセル')
         self.assertIn('キャンセル', reply)
-        self.assertEqual(Reservation.objects.count(), 0)
+        r = Reservation.objects.get(user_id='user-1')
+        self.assertEqual(r.status, Reservation.Status.CANCELLED)
+
+    def test_repair_kind_detected(self):
+        self.flow.start('修理の依頼をしたい')
+        r = Reservation.objects.get(user_id='user-1', status=Reservation.Status.PENDING)
+        self.assertEqual(r.kind, Reservation.Kind.REPAIR)
+
+    def test_start_discards_previous_pending(self):
+        self.flow.start('予約したい')
+        self.flow.handle('田中')
+        # 新しい予約を開始すると、受付中の前レコードは破棄される
+        self.flow.start('予約したい')
+        self.assertEqual(
+            Reservation.objects.filter(user_id='user-1', status=Reservation.Status.PENDING).count(),
+            1,
+        )
