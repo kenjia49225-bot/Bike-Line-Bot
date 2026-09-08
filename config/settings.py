@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'faqs',
     'conversations',
     'bot',
+    'reservations',
 ]
 
 MIDDLEWARE = [
@@ -139,6 +140,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # LINE Messaging API
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', '')
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', '')
+
+# スタッフ通知（引き継ぎ発生時に LINE で通知するスタッフのユーザーID、カンマ区切り）
+STAFF_LINE_USER_IDS = os.getenv('STAFF_LINE_USER_IDS', '')
 
 # AI (OpenAI)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
