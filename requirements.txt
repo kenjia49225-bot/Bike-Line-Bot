@@ -3,3 +3,5 @@ mysqlclient==2.2.8
 python-dotenv==1.2.3
 line-bot-sdk==3.25.0
 openai==3.8.0
+gunicorn==21.2.0
+whitenoise==6.7.0

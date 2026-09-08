@@ -23,15 +23,21 @@
 - `bot` アプリ（LINE 連携・AI 回答）
   - LINE Messaging API の Webhook 受信（`/bot/webhook/`）
   - 受信メッセージの会話履歴への保存
-  - AI（OpenAI）による自動回答（FAQ・店舗情報を参照）
+  - AI（OpenAI）による自動回答（FAQ・店舗情報を参照、記載のない情報は推測しないプロンプト）
   - 直近の会話履歴を文脈として AI に渡すマルチターン対応
   - FAQ の簡易セマンティック検索（関連 FAQ のみ AI に注入）
   - 営業時間・定休日の動的判定（`Store.is_open_now`）
   - AI で回答できない場合は人間（店舗スタッフ）への引き継ぎメッセージを返す
+  - 引き継ぎ発生時のスタッフへの LINE 通知（`STAFF_LINE_USER_IDS` 宛、二重通知防止）
   - 画像メッセージの受信（要引き継ぎとして保存）
   - ユーザー単位のレート制限（スパム対策）
   - LINE プッシュメッセージ送信（管理コマンド `send_line_message`）
   - Webhook・AI・引き継ぎのテスト
+- `reservations` アプリ（予約・修理受付）
+  - `Reservation` モデル（種別・氏名・希望日時・内容・電話番号・ステータス）
+  - 段階的入力フロー（名前→日時→内容→電話番号、途中キャンセル可）
+  - Django Admin での受付内容確認・ステータス管理
+  - 受付はスタッフが最終確定する設計（予約枠を自動確定しない）
 
 ## 技術スタック
 
@@ -40,6 +46,7 @@
 - MySQL（本番想定）
 - LINE Messaging API（`line-bot-sdk`）
 - AI API（OpenAI）
+- gunicorn / WhiteNoise（本番デプロイ用）
 
 ## ディレクトリ構成
 
@@ -132,10 +139,19 @@ Django Admin は `http://127.0.0.1:8000/admin/` から利用できます。
 | `MYSQL_PORT` | MySQL のポート |
 | `LINE_CHANNEL_SECRET` | LINE チャネルシークレット |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE チャネルアクセストークン |
+| `STAFF_LINE_USER_IDS` | 引き継ぎ通知を送るスタッフの LINE ユーザーID（カンマ区切り） |
 | `OPENAI_API_KEY` | OpenAI API キー |
 | `OPENAI_MODEL` | 使用する OpenAI モデル（デフォルト: `gpt-4o-mini`） |
+| `OPENAI_TIMEOUT` | OpenAI API タイムアウト秒数（デフォルト: `30`） |
+| `OPENAI_TEMPERATURE` | OpenAI 生成の温度（デフォルト: `0`） |
 | `RATE_LIMIT_MAX` | 1ユーザーあたりの最大メッセージ数（デフォルト: `10`） |
 | `RATE_LIMIT_WINDOW` | レート制限のウィンドウ秒数（デフォルト: `60`） |
+| `CSRF_TRUSTED_ORIGINS` | CSRF 信頼オリジン（カンマ区切り、HTTPS ドメイン） |
+| `SECURE_SSL_REDIRECT` | HTTPS リダイレクト有効化（`True` / `False`） |
+| `SESSION_COOKIE_SECURE` | セッション Cookie の Secure 属性（`True` / `False`） |
+| `CSRF_COOKIE_SECURE` | CSRF Cookie の Secure 属性（`True` / `False`） |
+| `SECURE_HSTS_SECONDS` | HSTS の有効秒数（`0` で無効） |
+| `LOG_LEVEL` | ログレベル（デフォルト: `INFO`） |
 
 ## 開発コマンド
 
@@ -159,12 +175,50 @@ python manage.py runserver
 python manage.py send_line_message <LINEユーザーID> <本文>
 ```
 
+## 本番デプロイ
+
+### 環境変数
+
+`.env.example` を `.env` にコピーし、実値を設定してください（`.env` は Git 管理外）。
+
+本番では最低限以下を設定します：
+
+- `DEBUG=False`
+- `DJANGO_SECRET_KEY` を安全なランダム値に
+- `ALLOWED_HOSTS` に公開ドメインを指定
+- `CSRF_TRUSTED_ORIGINS` に `https://<ドメイン>` を指定
+- `SECURE_SSL_REDIRECT=True`、`SESSION_COOKIE_SECURE=True`、`CSRF_COOKIE_SECURE=True`
+- `MYSQL_*` を本番 DB に
+- `STAFF_LINE_USER_IDS` に引き継ぎ通知先スタッフの LINE ユーザーID
+
+### WSGI サーバーでの起動（gunicorn）
+
+```bash
+pip install -r requirements.txt
+python manage.py collectstatic --noinput
+python manage.py migrate
+gunicorn config.wsgi:application --bind 0.0.0.0:8000
+```
+
+### Docker での起動
+
+```bash
+docker compose up -d --build
+```
+
+LINE Webhook URL には `https://<ドメイン>/bot/webhook/` を設定します（HTTPS 必須）。
+
+### 本番設定チェック
+
+```bash
+python manage.py check --deploy
+```
+
 ## 今後の開発予定
 
 優先順位の高い順に記載しています（内容は今後変更される可能性があります）。
 
-1. **人間への引き継ぎの実運用** … 引き継ぎ先スタッフへの通知（LINE Notify 等）・Admin からの返信 UI
+1. **引き継ぎ通知の運用調整** … 通知先スタッフの LINE ユーザーID 登録運用の整備
 2. **FAQ のセマンティック検索強化** … 埋め込みベースの検索（現状は簡易的な文字オーバーラップ）
-3. **予約・修理受付** … 日時指定の予約フロー
-4. **エラー処理の強化** … リトライ・ログ・監視の整備
-5. **本番デプロイ** … WSGI サーバー移行・`DEBUG=False`・固定ドメイン設定
+3. **予約・修理受付の拡張** … 予約可能枠の管理・カレンダー連携
+4. **エラー処理の強化** … リトライ・ログ・監視（Sentry 等）の整備
