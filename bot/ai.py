@@ -71,11 +71,18 @@ def generate_ai_reply(user_message, user_id=None):
 
     context = build_context(user_message)
     system_prompt = (
-        'あなたは自転車販売・修理店の LINE 問い合わせ対応アシスタントです。'
-        '以下の店舗情報と FAQ を参考に、ユーザーの質問に日本語で簡潔に答えてください。'
-        '参考情報で回答できない場合は、回答せず「HANDOFF」とだけ出力してください。'
-        '\n\n'
-        f'{context}'
+        'あなたは自転車販売・修理店の LINE 問い合わせ対応アシスタントです。\n'
+        '\n'
+        '【店舗情報とFAQ】\n'
+        f'{context}\n'
+        '\n'
+        '【回答ルール】\n'
+        '1. 上記の店舗情報とFAQのみを根拠として回答してください。\n'
+        '2. 店舗情報やFAQに記載がない情報は絶対に推測しないでください。\n'
+        '3. 営業時間・料金・在庫・予約状況・修理可否など、記載のない事項は回答せず「HANDOFF」と出力してください。\n'
+        '4. 回答は日本語で簡潔に、敬語で対応してください。\n'
+        '5. 回答できると判断した場合は回答文のみを出力してください。\n'
+        '6. 回答できない場合は「HANDOFF」とだけ出力してください。\n'
     )
 
     messages = [{'role': 'system', 'content': system_prompt}]
@@ -84,16 +91,17 @@ def generate_ai_reply(user_message, user_id=None):
         messages.append({'role': role, 'content': history.content})
     messages.append({'role': 'user', 'content': user_message})
 
-    client = OpenAI(api_key=api_key, timeout=30.0)
+    client = OpenAI(api_key=api_key, timeout=settings.OPENAI_TIMEOUT)
     response = client.chat.completions.create(
         model=settings.OPENAI_MODEL,
+        temperature=settings.OPENAI_TEMPERATURE,
         messages=messages,
     )
     answer = response.choices[0].message.content
     if answer is None:
         return None
     answer = answer.strip()
-    if answer == 'HANDOFF':
+    if answer.upper() == 'HANDOFF':
         return None
     return answer
 

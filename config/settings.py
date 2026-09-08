@@ -143,6 +143,8 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', '')
 # AI (OpenAI)
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+OPENAI_TIMEOUT = float(os.getenv('OPENAI_TIMEOUT', '30'))
+OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0'))
 
 # レート制限（スパム対策）
 RATE_LIMIT_MAX = int(os.getenv('RATE_LIMIT_MAX', '10'))       # 1ユーザーあたりの最大メッセージ数

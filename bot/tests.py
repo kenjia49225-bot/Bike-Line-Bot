@@ -5,7 +5,7 @@ from django.test import TestCase
 
 from conversations.models import Conversation
 
-from .ai import HANDOFF_MESSAGE, build_context, generate_reply
+from .ai import HANDOFF_MESSAGE, build_context, generate_ai_reply, generate_reply
 from .services import handle_text_message, save_message
 
 
@@ -69,6 +69,42 @@ class AIReplyTests(TestCase):
         FAQ.objects.create(question='支払い方法は？', answer='現金とカードです。', is_active=True)
         context = build_context('営業時間を教えてください')
         self.assertIn('営業時間は？', context)
+
+    @mock.patch('openai.OpenAI')
+    def test_generate_ai_reply_returns_answer(self, mock_openai_cls):
+        mock_client = mock_openai_cls.return_value
+        mock_response = mock.Mock()
+        mock_response.choices = [mock.Mock(message=mock.Mock(content='営業時間は10時からです。'))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with self.settings(OPENAI_API_KEY='test-key'):
+            reply = generate_ai_reply('営業時間は？')
+        self.assertEqual(reply, '営業時間は10時からです。')
+
+    @mock.patch('openai.OpenAI')
+    def test_generate_ai_reply_handoff_when_ai_says_handoff(self, mock_openai_cls):
+        mock_client = mock_openai_cls.return_value
+        mock_response = mock.Mock()
+        mock_response.choices = [mock.Mock(message=mock.Mock(content='HANDOFF'))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with self.settings(OPENAI_API_KEY='test-key'):
+            reply = generate_ai_reply('在庫はありますか？')
+        self.assertIsNone(reply)
+
+    def test_generate_ai_reply_no_api_key(self):
+        with self.settings(OPENAI_API_KEY=''):
+            self.assertIsNone(generate_ai_reply('こんにちは'))
+
+    @mock.patch('openai.OpenAI')
+    def test_generate_ai_reply_no_content(self, mock_openai_cls):
+        mock_client = mock_openai_cls.return_value
+        mock_response = mock.Mock()
+        mock_response.choices = [mock.Mock(message=mock.Mock(content=None))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with self.settings(OPENAI_API_KEY='test-key'):
+            self.assertIsNone(generate_ai_reply('こんにちは'))
 
 
 class WebhookViewTests(TestCase):
