@@ -19,6 +19,7 @@ class Reservation(models.Model):
     detail = models.TextField('内容', blank=True)
     phone = models.CharField('電話番号', max_length=20, blank=True)
     status = models.CharField('ステータス', max_length=20, choices=Status.choices, default=Status.PENDING)
+    step = models.CharField('入力中ステップ', max_length=20, blank=True)
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
     updated_at = models.DateTimeField('更新日時', auto_now=True)
 

@@ -5,7 +5,14 @@ from django.test import TestCase
 
 from conversations.models import Conversation
 
-from .ai import HANDOFF_MESSAGE, build_context, generate_ai_reply, generate_reply
+from .ai import (
+    HANDOFF_MESSAGE,
+    _build_history,
+    _rank_faqs,
+    build_context,
+    generate_ai_reply,
+    generate_reply,
+)
 from .services import handle_text_message, save_message
 from .views import _is_rate_limited
 
@@ -46,6 +53,15 @@ class BotServiceTests(TestCase):
         self.assertTrue(bot_conv.needs_human)
         self.assertEqual(bot_conv.status, Conversation.Status.HANDOFF)
 
+    @mock.patch('bot.notifications.notify_staff_handoff')
+    @mock.patch('bot.ai.generate_ai_reply', return_value=None)
+    def test_handoff_notifies_once_per_pending(self, mock_ai, mock_notify):
+        handle_text_message('user-4', '1回目の質問')
+        self.assertEqual(mock_notify.call_count, 1)
+        # 2回目は未解決の引き継ぎが既にあるため通知しない
+        handle_text_message('user-4', '2回目の質問')
+        self.assertEqual(mock_notify.call_count, 1)
+
 
 class AIReplyTests(TestCase):
     @mock.patch('bot.ai.generate_ai_reply', return_value='回答です。')
@@ -70,6 +86,41 @@ class AIReplyTests(TestCase):
         FAQ.objects.create(question='支払い方法は？', answer='現金とカードです。', is_active=True)
         context = build_context('営業時間を教えてください')
         self.assertIn('営業時間は？', context)
+
+    def test_rank_faqs_prioritizes_matching_faq(self):
+        from faqs.models import FAQ
+
+        FAQ.objects.create(question='営業時間は？', answer='10時から19時です。', is_active=True)
+        FAQ.objects.create(question='支払い方法は？', answer='現金とカードです。', is_active=True)
+        faqs = FAQ.objects.filter(is_active=True)
+        ranked = _rank_faqs(faqs, '営業時間を教えてください', limit=3)
+        self.assertEqual(ranked[0].question, '営業時間は？')
+
+    def test_rank_faqs_respects_limit(self):
+        from faqs.models import FAQ
+
+        for q in ['質問1です', '質問2です', '質問3です']:
+            FAQ.objects.create(question=q, answer='答', is_active=True)
+        faqs = FAQ.objects.filter(is_active=True)
+        ranked = _rank_faqs(faqs, '共通の単語', limit=2)
+        self.assertLessEqual(len(ranked), 2)
+
+    def test_build_history_reversed_and_limited(self):
+        from .ai import HISTORY_LIMIT
+
+        for i in range(HISTORY_LIMIT + 2):
+            Conversation.objects.create(
+                user_id='hist-user',
+                role=Conversation.Role.USER,
+                content=f'メッセージ{i}',
+            )
+        history = _build_history('hist-user')
+        self.assertEqual(len(history), HISTORY_LIMIT)
+        # 古い順（最初の要素が最も古い）
+        self.assertLessEqual(history[0].created_at, history[-1].created_at)
+
+    def test_build_history_empty_without_user(self):
+        self.assertEqual(_build_history(None), [])
 
     @mock.patch('openai.OpenAI')
     def test_generate_ai_reply_returns_answer(self, mock_openai_cls):
@@ -155,6 +206,51 @@ class WebhookViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Conversation.objects.count(), 2)
         mock_reply.assert_called_once_with('token', 'reply-1', '回答です。')
+
+    @mock.patch('bot.views.WebhookParser')
+    @mock.patch('bot.views._reply')
+    def test_webhook_image_message_marks_handoff(self, mock_reply, mock_parser):
+        from linebot.v3.webhooks import ContentProvider, ImageMessageContent, MessageEvent, UserSource
+
+        event = MessageEvent(
+            reply_token='reply-1',
+            source=UserSource(user_id='line-user-1'),
+            message=ImageMessageContent(
+                id='img-1', quote_token='quote-1',
+                content_provider=ContentProvider(type='line'),
+            ),
+            timestamp=1700000000000,
+            mode='active',
+            webhook_event_id='evt-1',
+            delivery_context={'is_redelivery': False},
+        )
+        mock_parser.return_value.parse.return_value = [event]
+
+        with self.settings(LINE_CHANNEL_ACCESS_TOKEN='token', LINE_CHANNEL_SECRET='secret'):
+            response = self.client.post(
+                '/bot/webhook/',
+                data=json.dumps({'events': []}),
+                content_type='application/json',
+                HTTP_X_LINE_SIGNATURE='sig',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        bot_conv = Conversation.objects.filter(role=Conversation.Role.BOT).get()
+        self.assertTrue(bot_conv.needs_human)
+
+    @mock.patch('bot.views.WebhookParser')
+    def test_webhook_invalid_signature_returns_403(self, mock_parser):
+        from linebot.v3.exceptions import InvalidSignatureError
+
+        mock_parser.return_value.parse.side_effect = InvalidSignatureError('bad')
+
+        response = self.client.post(
+            '/bot/webhook/',
+            data=json.dumps({'events': []}),
+            content_type='application/json',
+            HTTP_X_LINE_SIGNATURE='bad-sig',
+        )
+        self.assertEqual(response.status_code, 403)
 
 
 class HealthViewTests(TestCase):
