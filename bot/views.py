@@ -1,7 +1,6 @@
 import logging
 
 from django.conf import settings
-from django.core.cache import cache
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -25,12 +24,37 @@ IMAGE_REPLY = '画像を確認いたしました。担当スタッフが内容�
 
 
 def _is_rate_limited(user_id):
-    """ユーザー単位の簡易レート制限。上限を超えたら True を返す。"""
-    key = f'rate_limit:{user_id}'
-    count = cache.get(key, 0)
-    if count >= settings.RATE_LIMIT_MAX:
-        return True
-    cache.set(key, count + 1, timeout=settings.RATE_LIMIT_WINDOW)
+    """ユーザー単位のレート制限（DB ベース・複数ワーカーでも共有）。上限を超えたら True を返す。"""
+    from datetime import timedelta
+
+    from django.db import transaction
+    from django.utils import timezone
+
+    from .models import RateLimit
+
+    now = timezone.now()
+    window = timedelta(seconds=settings.RATE_LIMIT_WINDOW)
+
+    with transaction.atomic():
+        # 既存行はロックして原子的に更新、無ければ作成（初回は get_or_create で安全に処理）
+        try:
+            record = RateLimit.objects.select_for_update().get(user_id=user_id)
+            created = False
+        except RateLimit.DoesNotExist:
+            record = RateLimit(user_id=user_id, count=0, window_start=now)
+            created = True
+
+        # ウィンドウが過ぎていたらリセット
+        if not created and record.window_start < (now - window):
+            record.count = 0
+            record.window_start = now
+
+        if record.count >= settings.RATE_LIMIT_MAX:
+            return True
+
+        record.count += 1
+        record.save()
+
     return False
 
 

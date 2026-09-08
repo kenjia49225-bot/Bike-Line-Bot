@@ -7,6 +7,7 @@ from conversations.models import Conversation
 
 from .ai import HANDOFF_MESSAGE, build_context, generate_ai_reply, generate_reply
 from .services import handle_text_message, save_message
+from .views import _is_rate_limited
 
 
 class BotServiceTests(TestCase):
@@ -154,3 +155,25 @@ class WebhookViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Conversation.objects.count(), 2)
         mock_reply.assert_called_once_with('token', 'reply-1', '回答です。')
+
+
+class HealthViewTests(TestCase):
+    def test_health_returns_200(self):
+        response = self.client.get('/bot/health/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'ok')
+
+
+class RateLimitTests(TestCase):
+    def test_allows_within_limit(self):
+        from .models import RateLimit
+
+        for _ in range(9):
+            self.assertFalse(_is_rate_limited('user-1'))
+        self.assertEqual(RateLimit.objects.get(user_id='user-1').count, 9)
+
+    def test_blocks_over_limit(self):
+        for _ in range(10):
+            _is_rate_limited('user-2')
+        self.assertTrue(_is_rate_limited('user-2'))
